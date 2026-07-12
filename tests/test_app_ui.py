@@ -1,6 +1,7 @@
 import importlib.util
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def load_app_module():
@@ -106,3 +107,28 @@ def test_audio_playback_payload_falls_back_to_databricks_files_api():
     assert audio_bytes == b"RIFF-remote-audio"
     assert mime_type == "audio/wav"
     assert filename == "remote_attempt.wav"
+
+
+def test_statement_data_array_waits_for_a_pending_warehouse_query():
+    app = load_app_module()
+    pending = SimpleNamespace(
+        statement_id="statement-1",
+        status=SimpleNamespace(state="PENDING", error=None),
+        result=None,
+    )
+    succeeded = SimpleNamespace(
+        statement_id="statement-1",
+        status=SimpleNamespace(state="SUCCEEDED", error=None),
+        result=SimpleNamespace(data_array=[["report-json"]]),
+    )
+    fetched = []
+
+    rows = app.statement_data_array(
+        pending,
+        fetch_statement=lambda statement_id: fetched.append(statement_id) or succeeded,
+        sleep=lambda _: None,
+        timeout_seconds=1,
+    )
+
+    assert rows == [["report-json"]]
+    assert fetched == ["statement-1"]

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -60,10 +61,12 @@ def load_databricks_report(attempt_id: str | None = None) -> ScoringReport:
             warehouse_id=warehouse_id,
             wait_timeout="30s",
         )
-        result = getattr(response, "result", None)
-        data_array = getattr(result, "data_array", None) if result is not None else None
+        data_array = statement_data_array(response)
         if data_array:
             return ScoringReport.model_validate_json(data_array[0][0])
+        raise FileNotFoundError("No scoring report found in Databricks scoring_results.")
+    except FileNotFoundError:
+        raise
     except Exception as exc:
         sdk_error = exc
 
@@ -79,9 +82,8 @@ def load_databricks_report(attempt_id: str | None = None) -> ScoringReport:
     access_token = os.getenv("DATABRICKS_TOKEN")
     if not server_hostname or not http_path or not access_token:
         raise RuntimeError(
-            "Databricks report query is unavailable. "
-            f"SDK error: {sdk_error}. "
-            "Token fallback requires DATABRICKS_SERVER_HOSTNAME, DATABRICKS_HTTP_PATH, and DATABRICKS_TOKEN."
+            f"Databricks SDK report query failed: {sdk_error}. "
+            "No explicit token-based SQL fallback is configured."
         )
 
     where = "WHERE attempt_id = ?" if attempt_id else ""
@@ -117,10 +119,39 @@ def whisper_client(model_name: str) -> LocalWhisperASRClient:
     return LocalWhisperASRClient(model_name=model_name)
 
 
-def statement_data_array(response) -> list[list]:
-    result = getattr(response, "result", None)
-    data_array = getattr(result, "data_array", None) if result is not None else None
-    return data_array or []
+def statement_data_array(
+    response,
+    fetch_statement=None,
+    sleep=time.sleep,
+    timeout_seconds: float = 90,
+) -> list[list]:
+    fetch = fetch_statement or workspace_client().statement_execution.get_statement
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        result = getattr(response, "result", None)
+        data_array = getattr(result, "data_array", None) if result is not None else None
+        if data_array:
+            return data_array
+
+        status = getattr(response, "status", None)
+        raw_state = getattr(status, "state", "") if status is not None else ""
+        state = str(getattr(raw_state, "value", raw_state) or "").upper().rsplit(".", 1)[-1]
+        if state in {"FAILED", "CANCELED", "CLOSED"}:
+            error = getattr(status, "error", None)
+            message = getattr(error, "message", None) or str(error or state)
+            raise RuntimeError(f"Databricks SQL statement {state.lower()}: {message}")
+        if state == "SUCCEEDED":
+            return []
+
+        statement_id = getattr(response, "statement_id", None)
+        if not statement_id:
+            return []
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"Databricks SQL statement {statement_id} did not finish within {timeout_seconds:.0f} seconds."
+            )
+        sleep(1)
+        response = fetch(statement_id)
 
 
 def load_platform_summary(attempt_id: str) -> dict:
