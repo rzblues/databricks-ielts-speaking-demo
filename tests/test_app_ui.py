@@ -26,7 +26,7 @@ def test_databricks_theme_uses_restrained_brand_tokens_without_gradients():
     assert (
         '[data-testid="stsidebar"] {\n'
         "        background: var(--db-surface);\n"
-        "        border-right: 0;"
+        "        border-right: 1px solid var(--db-border);"
     ) in css
 
     allowed_colors = {

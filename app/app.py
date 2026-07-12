@@ -511,7 +511,7 @@ def databricks_theme_css() -> str:
 
     [data-testid="stSidebar"] {
         background: var(--db-surface);
-        border-right: 0;
+        border-right: 1px solid var(--db-border);
         width: 264px !important;
     }
 
