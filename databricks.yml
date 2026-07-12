@@ -11,11 +11,3 @@ include:
 
 workspace:
   root_path: /Workspace/Users/${workspace.current_user.userName}/ielts-speaking-demo
-
-sync:
-  exclude:
-    - .databricks/
-    - .gstack/
-    - .pytest_cache/
-    - outputs/
-    - "**/__pycache__/"
