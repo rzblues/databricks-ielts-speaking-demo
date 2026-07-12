@@ -1,0 +1,12 @@
+command: ["streamlit", "run", "app/app.py"]
+env:
+  - name: DATABRICKS_DEMO
+    value: "true"
+  - name: DATABRICKS_NAMESPACE
+    value: "main.ielts_demo"
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: "sql-warehouse"
+  - name: DATABRICKS_VOLUME_PATH
+    valueFrom: "audio-volume"
+  - name: WHISPER_MODEL
+    value: "/Volumes/main/ielts_demo/ielts_audio/models/tiny.en.pt"

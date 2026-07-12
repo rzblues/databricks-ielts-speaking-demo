@@ -1,0 +1,47 @@
+[
+  {
+    "attempt_id": "attempt_sample_001",
+    "segment_id": 0,
+    "start_sec": 0.5,
+    "end_sec": 8.2,
+    "text": "I would like to live in Singapore because it is very convenient and safe.",
+    "avg_logprob": -0.18,
+    "no_speech_prob": 0.03
+  },
+  {
+    "attempt_id": "attempt_sample_001",
+    "segment_id": 1,
+    "start_sec": 9.4,
+    "end_sec": 19.1,
+    "text": "Um the transport system is efficient, and people can travel across the city without spending too much time.",
+    "avg_logprob": -0.24,
+    "no_speech_prob": 0.04
+  },
+  {
+    "attempt_id": "attempt_sample_001",
+    "segment_id": 2,
+    "start_sec": 21.0,
+    "end_sec": 32.8,
+    "text": "Although the cost of living is high, I think the career opportunities are excellent for young professionals.",
+    "avg_logprob": -0.2,
+    "no_speech_prob": 0.05
+  },
+  {
+    "attempt_id": "attempt_sample_001",
+    "segment_id": 3,
+    "start_sec": 34.0,
+    "end_sec": 47.4,
+    "text": "I also like the multicultural environment, which makes daily life more interesting and helps people understand different cultures.",
+    "avg_logprob": -0.22,
+    "no_speech_prob": 0.03
+  },
+  {
+    "attempt_id": "attempt_sample_001",
+    "segment_id": 4,
+    "start_sec": 49.1,
+    "end_sec": 63.8,
+    "text": "In the future I hope to study data and artificial intelligence there, so living in that city would support both my education and my career.",
+    "avg_logprob": -0.19,
+    "no_speech_prob": 0.02
+  }
+]

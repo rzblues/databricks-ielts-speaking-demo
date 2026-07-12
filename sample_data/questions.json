@@ -1,0 +1,8 @@
+[
+  {
+    "question_id": "part2_home_city",
+    "part": "Speaking Part 2",
+    "question_text": "Describe a city you would like to live in.",
+    "expected_response_seconds": 90
+  }
+]

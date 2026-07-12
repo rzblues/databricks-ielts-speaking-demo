@@ -1,0 +1,108 @@
+resources:
+  jobs:
+    ielts_speaking_demo_pipeline:
+      name: ielts-speaking-demo-pipeline
+      max_concurrent_runs: 1
+      timeout_seconds: 7200
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      notification_settings:
+        no_alert_for_skipped_runs: true
+      parameters:
+        - name: attempt_id
+          default: attempt_real_final
+        - name: audio_path
+          default: /Volumes/main/ielts_demo/ielts_audio/attempt_real_final.wav
+        - name: candidate_id
+          default: demo_candidate_real
+        - name: question_id
+          default: part2_problem
+        - name: question_text
+          default: Describe a time you solved a difficult problem.
+        - name: whisper_model
+          default: /Volumes/main/ielts_demo/ielts_audio/models/tiny.en.pt
+        - name: model_endpoint
+          default: databricks-gpt-oss-20b
+      tasks:
+        - task_key: setup_tables
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../sql/setup_tables.sql
+        - task_key: ingest_audio
+          depends_on:
+            - task_key: setup_tables
+          notebook_task:
+            notebook_path: ../notebooks/01_ingest_audio.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+              audio_path: "{{job.parameters.audio_path}}"
+              candidate_id: "{{job.parameters.candidate_id}}"
+              question_id: "{{job.parameters.question_id}}"
+              question_text: "{{job.parameters.question_text}}"
+        - task_key: transcribe_real_audio
+          depends_on:
+            - task_key: ingest_audio
+          notebook_task:
+            notebook_path: ../notebooks/02_transcribe.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+              audio_path: "{{job.parameters.audio_path}}"
+              candidate_id: "{{job.parameters.candidate_id}}"
+              question_id: "{{job.parameters.question_id}}"
+              question_text: "{{job.parameters.question_text}}"
+              whisper_model: "{{job.parameters.whisper_model}}"
+        - task_key: extract_features
+          depends_on:
+            - task_key: transcribe_real_audio
+          notebook_task:
+            notebook_path: ../notebooks/03_extract_features.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+        - task_key: model_serving_score
+          depends_on:
+            - task_key: extract_features
+          notebook_task:
+            notebook_path: ../notebooks/10_score_with_model_serving.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+              model_endpoint: "{{job.parameters.model_endpoint}}"
+              real_llm_required: "true"
+        - task_key: publish_feature_table
+          depends_on:
+            - task_key: extract_features
+          notebook_task:
+            notebook_path: ../notebooks/07_publish_feature_table.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+        - task_key: sql_ai_insights
+          depends_on:
+            - task_key: transcribe_real_audio
+          notebook_task:
+            notebook_path: ../notebooks/09_run_sql_ai_insights.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+        - task_key: quality_checks
+          depends_on:
+            - task_key: model_serving_score
+            - task_key: publish_feature_table
+            - task_key: sql_ai_insights
+          notebook_task:
+            notebook_path: ../notebooks/08_run_quality_checks.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+        - task_key: mlflow_tracking
+          depends_on:
+            - task_key: quality_checks
+          notebook_task:
+            notebook_path: ../notebooks/06_log_mlflow_baseline.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"
+        - task_key: review_results
+          depends_on:
+            - task_key: mlflow_tracking
+          notebook_task:
+            notebook_path: ../notebooks/05_review_results.py
+            base_parameters:
+              attempt_id: "{{job.parameters.attempt_id}}"

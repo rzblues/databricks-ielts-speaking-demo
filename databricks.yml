@@ -1,0 +1,21 @@
+bundle:
+  name: ielts-speaking-demo
+
+variables:
+  warehouse_id:
+    description: SQL warehouse used by the setup task
+    default: 77cea25dcd8171c6
+
+include:
+  - resources/*.yml
+
+workspace:
+  root_path: /Workspace/Users/${workspace.current_user.userName}/ielts-speaking-demo
+
+sync:
+  exclude:
+    - .databricks/
+    - .gstack/
+    - .pytest_cache/
+    - outputs/
+    - "**/__pycache__/"

@@ -1,0 +1,12 @@
+[
+  {
+    "attempt_id": "attempt_sample_001",
+    "candidate_id": "candidate_demo",
+    "question_id": "part2_home_city",
+    "question_text": "Describe a city you would like to live in.",
+    "audio_path": "sample_data/audio/sample_candidate_response.wav",
+    "audio_format": "wav",
+    "duration_sec": 71.5,
+    "source": "sample"
+  }
+]
