@@ -23,6 +23,11 @@ def test_databricks_theme_uses_restrained_brand_tokens_without_gradients():
     assert "backdrop-filter" not in css
     assert '[data-testid="stappviewcontainer"] {\n        background: var(--db-surface);' in css
     assert "--db-shadow: none;" in css
+    assert (
+        '[data-testid="stsidebar"] {\n'
+        "        background: var(--db-surface);\n"
+        "        border-right: 0;"
+    ) in css
 
     allowed_colors = {
         "#16865c",

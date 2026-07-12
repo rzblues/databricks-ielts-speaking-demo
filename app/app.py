@@ -510,8 +510,8 @@ def databricks_theme_css() -> str:
     }
 
     [data-testid="stSidebar"] {
-        background: var(--db-sidebar);
-        border-right: 1px solid var(--db-border);
+        background: var(--db-surface);
+        border-right: 0;
         width: 264px !important;
     }
 
