@@ -61,8 +61,17 @@ status=MONITOR_STATUS_ACTIVE
 - `databricks-gpt-oss-20b` is a generic foundation model prompted with the demo rubric, not a validated IELTS examiner model.
 - Pronunciation remains an ASR/timing-based intelligibility estimate, not phoneme-level diagnosis.
 - This workspace supports Serverless Jobs only and limits active Serverless runs to one; the verified Whisper task took about 295 seconds.
-- Browser screenshot verification was unavailable in this run; App status and startup logs were verified through Databricks APIs.
+- Local browser screenshot verification passed; automated access to the deployed App still requires an interactive Databricks sign-in.
 - Automatic candidate-data retention/deletion is not configured; README documents explicit Volume and Delta deletion responsibilities.
+
+## 2026-07-14 App Upload Repair
+
+- Reproduced: App code attempted a local filesystem write under `/Volumes`, which failed with `Permission denied`.
+- Fixed: uploaded bytes now use the Databricks Files API; Whisper receives a temporary local audio copy and a cached local copy of the Volume-hosted model.
+- UI: upload instructions use explicit dark text, stale reruns no longer dim the page, and report loading plus Whisper processing show staged status and progress.
+- Verification: `54 passed`; browser screenshot and console check passed; Files API upload/download probe passed and was deleted afterward.
+- Deployment: `01f17f8cb25618e28cb872dce3e03fce`, status `SUCCEEDED`; App `RUNNING`; compute `ACTIVE`.
+- Privacy cleanup: removed stale `sample_data/audio/real_demo.wav` from the Workspace deployment source; only the synthetic sample remains.
 
 ## Pending Loop
 

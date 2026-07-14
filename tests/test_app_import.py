@@ -19,7 +19,11 @@ def test_app_load_report_fails_closed_without_explicit_fallback(monkeypatch):
 
     monkeypatch.setenv("DATABRICKS_DEMO", "true")
     monkeypatch.setenv("ALLOW_LOCAL_REPORT_FALLBACK", "false")
-    monkeypatch.delenv("DATABRICKS_TOKEN", raising=False)
+    monkeypatch.setattr(
+        module,
+        "load_databricks_report",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("Databricks unavailable")),
+    )
 
     try:
         module.load_report()
@@ -37,7 +41,11 @@ def test_app_load_report_uses_sample_only_with_explicit_fallback(monkeypatch):
 
     monkeypatch.setenv("DATABRICKS_DEMO", "true")
     monkeypatch.setenv("ALLOW_LOCAL_REPORT_FALLBACK", "true")
-    monkeypatch.delenv("DATABRICKS_TOKEN", raising=False)
+    monkeypatch.setattr(
+        module,
+        "load_databricks_report",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("Databricks unavailable")),
+    )
     report, warning = module.load_report()
 
     assert report.attempt_id == "attempt_sample_001"

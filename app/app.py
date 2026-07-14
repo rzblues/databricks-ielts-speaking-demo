@@ -13,7 +13,9 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import lru_cache
 from html import escape
+from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from ielts_scorer.asr import LocalWhisperASRClient
@@ -254,6 +256,7 @@ def register_uploaded_audio(
     question_id: str,
     question_text: str,
     run_id: str | None = None,
+    volume_uploader: Callable | None = None,
 ) -> str:
     namespace = os.getenv("DATABRICKS_NAMESPACE", "main.ielts_demo")
     volume_path = os.getenv("DATABRICKS_VOLUME_PATH", "/Volumes/main/ielts_demo/ielts_audio")
@@ -263,16 +266,14 @@ def register_uploaded_audio(
     validate_attempt_id(attempt_id)
     if not candidate_id.strip() or not question_id.strip() or not question_text.strip():
         raise ValueError("Candidate ID, question ID, and question are required.")
-    target_path = Path(volume_destination(attempt_id, Path(uploaded_file.name), volume_path))
-    target_path.parent.mkdir(parents=True, exist_ok=True)
+    audio_path = volume_destination(attempt_id, Path(uploaded_file.name), volume_path)
     content = uploaded_file.getvalue()
     if not content:
         raise ValueError("Uploaded file is empty.")
     max_bytes = int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", str(50 * 1024 * 1024)))
     if len(content) > max_bytes:
         raise ValueError(f"Uploaded file exceeds the {max_bytes // (1024 * 1024)} MB limit.")
-    target_path.write_bytes(content)
-    audio_path = str(target_path)
+    upload_volume_bytes(audio_path, content, uploader=volume_uploader)
     now = datetime.now(timezone.utc)
     execute_databricks_statement(f"DELETE FROM {namespace}.attempts WHERE attempt_id = {sql_literal(attempt_id)}")
     execute_databricks_statement(
@@ -295,6 +296,18 @@ def register_uploaded_audio(
     return audio_path
 
 
+def upload_volume_bytes(
+    destination_path: str,
+    content: bytes,
+    uploader: Callable | None = None,
+) -> None:
+    upload = uploader or workspace_client().files.upload
+    try:
+        upload(destination_path, BytesIO(content), overwrite=True)
+    except Exception as exc:
+        raise RuntimeError("Audio could not be uploaded to the Databricks Volume.") from exc
+
+
 def insert_row(table: str, columns: list[str], values: list) -> None:
     namespace = os.getenv("DATABRICKS_NAMESPACE", "main.ielts_demo")
     execute_databricks_statement(
@@ -309,29 +322,46 @@ def process_uploaded_audio_on_databricks_compute(
     candidate_id: str,
     question_id: str,
     question_text: str,
+    progress: Callable[[str, int], None] | None = None,
 ) -> ScoringReport:
     namespace = os.getenv("DATABRICKS_NAMESPACE", "main.ielts_demo")
     run_id = "run_" + uuid4().hex
+    notify = progress or (lambda _message, _percent: None)
+    notify("Uploading audio to the governed Volume", 10)
     audio_path = register_uploaded_audio(uploaded_file, attempt_id, candidate_id, question_id, question_text, run_id=run_id)
     try:
-        local_audio = Path(audio_path)
-        processed_audio = preprocess_for_asr(local_audio, Path("/tmp/ielts_scorer_processed"))
-        duration_sec = inspect_audio(processed_audio).duration_sec
-        attempt = Attempt(
-            attempt_id=attempt_id,
-            candidate_id=candidate_id,
-            question_id=question_id,
-            question_text=question_text,
-            audio_path=audio_path,
-            audio_format=local_audio.suffix.lower().removeprefix("."),
-            duration_sec=duration_sec,
-            source="upload",
-        )
-        asr_attempt = attempt.model_copy(update={"audio_path": str(processed_audio)})
-        model_name = os.getenv("WHISPER_MODEL", "/Volumes/main/ielts_demo/ielts_audio/models/tiny.en.pt")
-        segments = [segment for segment in whisper_client(model_name).transcribe(asr_attempt) if segment.text.strip()]
+        notify("Preparing a local ASR working copy", 28)
+        with TemporaryDirectory(prefix=f"ielts_{attempt_id}_") as work_dir:
+            local_audio = Path(work_dir) / Path(audio_path).name
+            local_audio.write_bytes(uploaded_file.getvalue())
+            processed_audio = preprocess_for_asr(local_audio, Path(work_dir) / "processed")
+            duration_sec = inspect_audio(processed_audio).duration_sec
+            attempt = Attempt(
+                attempt_id=attempt_id,
+                candidate_id=candidate_id,
+                question_id=question_id,
+                question_text=question_text,
+                audio_path=audio_path,
+                audio_format=local_audio.suffix.lower().removeprefix("."),
+                duration_sec=duration_sec,
+                source="upload",
+            )
+            asr_attempt = attempt.model_copy(update={"audio_path": str(processed_audio)})
+            notify("Loading Whisper on Databricks App compute", 42)
+            configured_model = os.getenv(
+                "WHISPER_MODEL",
+                "/Volumes/main/ielts_demo/ielts_audio/models/tiny.en.pt",
+            )
+            model_name = str(materialize_volume_file(configured_model))
+            notify("Transcribing real audio with Whisper", 58)
+            segments = [
+                segment
+                for segment in whisper_client(model_name).transcribe(asr_attempt)
+                if segment.text.strip()
+            ]
         if not segments:
             raise ValueError("real ASR returned empty transcript")
+        notify("Extracting explainable speech features", 76)
         features = extract_features(attempt_id, segments, duration_sec=duration_sec)
         provenance = registered_real_audio_provenance(
             asr_provider="databricks_app_local_whisper",
@@ -347,6 +377,7 @@ def process_uploaded_audio_on_databricks_compute(
         )
         raise
 
+    notify("Writing assessment records to Delta", 88)
     execute_databricks_statement(f"DELETE FROM {namespace}.asr_segments WHERE attempt_id = {sql_literal(attempt_id)}")
     execute_databricks_statement(f"DELETE FROM {namespace}.speech_features WHERE attempt_id = {sql_literal(attempt_id)}")
     execute_databricks_statement(f"DELETE FROM {namespace}.scoring_results WHERE attempt_id = {sql_literal(attempt_id)}")
@@ -406,6 +437,7 @@ def process_uploaded_audio_on_databricks_compute(
         f"UPDATE {namespace}.processing_runs SET processing_status = 'COMPLETED', asr_provider = 'databricks_app_local_whisper', "
         f"asr_is_mock = false, scoring_provider = 'rule_based_mock', scoring_is_mock = true WHERE run_id = {sql_literal(run_id)}"
     )
+    notify("Assessment ready", 100)
     return report
 
 
@@ -423,14 +455,49 @@ def load_report() -> tuple[ScoringReport, str | None]:
         return build_embedded_sample_report(), str(exc)
 
 
-def download_volume_file(audio_path: str, max_bytes: int) -> bytes:
+def download_databricks_file(file_path: str, max_bytes: int) -> bytes:
     try:
-        response = workspace_client().files.download(audio_path)
+        response = workspace_client().files.download(file_path)
         with response.contents as stream:
             content = stream.read(max_bytes + 1)
     except Exception as exc:
-        raise RuntimeError("Scored audio could not be downloaded from the Databricks Volume.") from exc
+        raise RuntimeError("A required file could not be downloaded from the Databricks Volume.") from exc
     return content
+
+
+def download_volume_file(audio_path: str, max_bytes: int) -> bytes:
+    try:
+        return download_databricks_file(audio_path, max_bytes)
+    except RuntimeError as exc:
+        raise RuntimeError("Scored audio could not be downloaded from the Databricks Volume.") from exc
+
+
+def materialize_volume_file(
+    remote_path: str,
+    cache_dir: Path = Path("/tmp/ielts_scorer_models"),
+    loader: Callable[[str, int], bytes] | None = None,
+    max_bytes: int | None = None,
+) -> Path:
+    path = Path(remote_path)
+    if not remote_path.startswith("/Volumes/"):
+        return path
+
+    limit = max_bytes or int(os.getenv("MAX_WHISPER_MODEL_BYTES", str(500 * 1024 * 1024)))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.sha256(remote_path.encode("utf-8")).hexdigest()[:12]
+    local_path = cache_dir / f"{cache_key}-{path.name}"
+    if local_path.is_file() and local_path.stat().st_size > 0:
+        return local_path
+
+    content = (loader or download_databricks_file)(remote_path, limit)
+    if not content:
+        raise ValueError("Whisper model file is empty.")
+    if len(content) > limit:
+        raise ValueError(f"Whisper model exceeds the {limit // (1024 * 1024)} MB cache limit.")
+    temporary_path = local_path.with_suffix(local_path.suffix + ".tmp")
+    temporary_path.write_bytes(content)
+    temporary_path.replace(local_path)
+    return local_path
 
 
 def load_audio_playback_payload(
@@ -533,6 +600,29 @@ def databricks_theme_css() -> str:
 
     [data-testid="stFileUploaderDropzone"] button {
         border-radius: var(--db-radius-md);
+    }
+
+    [data-testid="stFileUploaderDropzoneInstructions"],
+    [data-testid="stFileUploaderDropzoneInstructions"] p,
+    [data-testid="stFileUploaderDropzoneInstructions"] span,
+    [data-testid="stFileUploaderDropzoneInstructions"] small {
+        color: var(--db-muted) !important;
+    }
+
+    [data-stale="true"] {
+        opacity: 1 !important;
+    }
+
+    [data-testid="stStatusWidget"] {
+        background: var(--db-surface);
+        border: 1px solid var(--db-border);
+        border-left: 3px solid var(--db-red);
+        border-radius: var(--db-radius-md);
+        color: var(--db-text);
+    }
+
+    [data-testid="stProgress"] > div > div > div > div {
+        background-color: var(--db-red);
     }
 
     [data-testid="stTextInput"] input,
@@ -1173,9 +1263,15 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
+    load_slot = st.empty()
+    with load_slot.container():
+        load_status = st.status("Loading assessment data", expanded=True)
+        load_progress = st.progress(20, text="Connecting to Databricks SQL")
     try:
         report, report_warning = load_report()
     except Exception as exc:
+        load_status.update(label="Assessment data could not be loaded", state="error", expanded=True)
+        load_progress.progress(100, text="Databricks report query failed")
         st.error("Databricks report data is unavailable. No sample result is substituted in strict demo mode.")
         with st.expander("Connection diagnostic", expanded=False):
             st.code(str(exc))
@@ -1186,8 +1282,12 @@ def main() -> None:
             st.code(report_warning)
 
     databricks_demo = os.getenv("DATABRICKS_DEMO", "true").lower() in {"1", "true", "yes", "on"}
+    load_progress.progress(65, text="Loading platform provenance and quality checks")
     platform_summary = load_platform_summary(report.attempt_id) if databricks_demo else {}
     attempt_summary = platform_summary.get("attempt", {})
+    load_progress.progress(100, text="Assessment ready")
+    load_status.update(label="Assessment ready", state="complete", expanded=False)
+    load_slot.empty()
 
     with st.sidebar:
         st.markdown(
@@ -1211,11 +1311,15 @@ def main() -> None:
         question_id = st.text_input("Question ID", value="part2_problem")
         question_text = st.text_area("Question", value="Describe a time you solved a difficult problem.")
         if st.button("Register audio", disabled=uploaded is None, use_container_width=True):
+            registration_status = st.status("Registering audio", expanded=True)
             try:
+                registration_status.write("Uploading audio to the governed Databricks Volume")
                 registered_path = register_uploaded_audio(uploaded, attempt_id, candidate_id, question_id, question_text)
+                registration_status.update(label="Audio registered", state="complete", expanded=False)
                 st.success(f"Registered: {registered_path}")
                 st.info("Audio registered. Continue with Whisper ASR, or use the notebook/job path for longer files.")
             except Exception as exc:
+                registration_status.update(label="Audio registration failed", state="error", expanded=True)
                 st.error(f"Upload/register failed: {exc}")
         if st.button(
             "Process with Whisper ASR",
@@ -1223,18 +1327,27 @@ def main() -> None:
             disabled=uploaded is None,
             use_container_width=True,
         ):
+            process_status = st.status("Preparing real-audio assessment", expanded=True)
+            process_progress = process_status.progress(5, text="Validating upload")
+
+            def update_processing_status(message: str, percent: int) -> None:
+                process_status.update(label=message, state="running", expanded=True)
+                process_progress.progress(percent, text=message)
+
             try:
-                with st.spinner("Running Whisper on Databricks App compute..."):
-                    processed_report = process_uploaded_audio_on_databricks_compute(
-                        uploaded,
-                        attempt_id,
-                        candidate_id,
-                        question_id,
-                        question_text,
-                    )
+                processed_report = process_uploaded_audio_on_databricks_compute(
+                    uploaded,
+                    attempt_id,
+                    candidate_id,
+                    question_id,
+                    question_text,
+                    progress=update_processing_status,
+                )
+                process_status.update(label="Assessment ready", state="complete", expanded=False)
                 st.success(f"Processed real ASR attempt: {processed_report.attempt_id}")
                 st.rerun()
             except Exception as exc:
+                process_status.update(label="Real ASR processing failed", state="error", expanded=True)
                 st.error(f"Real ASR processing failed: {exc}")
 
         st.markdown("<hr />", unsafe_allow_html=True)
