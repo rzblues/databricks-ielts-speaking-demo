@@ -1,8 +1,20 @@
 # Databricks IELTS Speaking Audio Scoring Demo
 
-This is a runnable customer demo for IELTS Speaking audio scoring on Databricks.
+[![Tests](https://github.com/rzblues/databricks-ielts-speaking-demo/actions/workflows/test.yml/badge.svg)](https://github.com/rzblues/databricks-ielts-speaking-demo/actions/workflows/test.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](https://www.python.org/downloads/)
+[![Databricks App](https://img.shields.io/badge/Databricks-App-FF3621)](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com)
 
-[Open the deployed Databricks App](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com) · [View the public GitHub project](https://github.com/rzblues/databricks-ielts-speaking-demo)
+An end-to-end Databricks customer demo for IELTS Speaking audio assessment: real audio bytes, Whisper ASR, explainable features, Model Serving, Delta tables, MLflow, SQL AI, and a Streamlit App.
+
+![IELTS Speaking Assessment Databricks App](docs/assets/app-overview.png)
+
+**[Open the live Databricks App](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com)** *(Databricks sign-in and `CAN USE` permission required)* · **[Deployment guide](#deploy-to-your-databricks-workspace)**
+
+## What This Demonstrates
+
+- Real audio playback and non-mock Whisper transcription on Databricks compute.
+- Explainable IELTS-style dimension estimates backed by Model Serving and speech features.
+- Governed Delta records with MLflow tracking, SQL AI insights, and quality checks.
 
 The demo starts from an audio attempt record, transcribes it through an ASR boundary or mock fallback, extracts explainable speech/language features, estimates IELTS-style speaking bands, writes table-shaped records, and renders a report.
 
@@ -94,7 +106,7 @@ The App uses its Databricks service principal through `WorkspaceClient()`; do no
 
 Current deployed App:
 
-[ielts-speaking-demo](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com)
+[ielts-speaking-demo](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com) *(Databricks sign-in and `CAN USE` permission required)*
 
 ## Local Quality Checks
 
