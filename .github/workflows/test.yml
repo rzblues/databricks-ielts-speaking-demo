@@ -21,6 +21,9 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Install audio dependency
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
       - name: Install test dependencies
         run: python -m pip install -e ".[dev]"
 
