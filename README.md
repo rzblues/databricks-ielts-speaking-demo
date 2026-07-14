@@ -8,7 +8,7 @@ An end-to-end Databricks customer demo for IELTS Speaking audio assessment: real
 
 ![IELTS Speaking Assessment Databricks App](docs/assets/app-overview.png)
 
-**[Open the live Databricks App](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com)** *(Databricks sign-in and `CAN USE` permission required)* · **[Deployment guide](#deploy-to-your-databricks-workspace)**
+**[Open the live Databricks App](https://ielts-speaking-demo-7474646798897087.aws.databricksapps.com)** *(Databricks sign-in and `CAN USE` permission required)* · **[Download the solution deck](docs/ielts-speaking-databricks-solution.pptx)** · **[Deployment guide](#deploy-to-your-databricks-workspace)**
 
 ## What This Demonstrates
 
