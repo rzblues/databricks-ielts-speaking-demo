@@ -40,7 +40,7 @@ Every output is keyed by `attempt_id`:
 ## ML Platform Layer
 
 - MLflow tracking records scoring metrics, feature metrics, provider tags, and attempt identifiers.
-- Model Serving can replace rule-based mock scoring with a live Databricks-hosted model endpoint.
+- The App and Serverless Job real-audio paths use a live Databricks-hosted Model Serving endpoint; rule-based scoring remains a local fallback only.
 - `notebooks/07_publish_feature_table.py` registers and merges `speech_features` through `FeatureEngineeringClient`; the manual script is explicitly a Delta-only fallback.
 - Monitoring runs SQL expectations and attempts a Lakehouse/Data Quality monitor on the source feature table.
 - SQL AI functions enrich transcripts with native `ai_analyze_sentiment` and `ai_classify` outputs.

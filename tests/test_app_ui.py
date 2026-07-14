@@ -74,6 +74,19 @@ def test_uploaded_audio_gets_a_new_safe_attempt_id():
     assert app.validate_attempt_id(attempt_id) == attempt_id
 
 
+def test_processing_status_uses_dark_text_on_a_light_surface():
+    app = load_app_module()
+
+    markup = app.processing_status_markup("Running Model Serving", 82)
+    css = app.databricks_theme_css().lower()
+
+    assert 'class="processing-status running"' in markup
+    assert 'style="width: 82%"' in markup
+    assert "#ffffff" not in markup.lower()
+    assert ".processing-status" in css
+    assert "color: var(--db-text) !important;" in css
+
+
 def test_score_and_evidence_markup_match_the_2a_information_hierarchy():
     app = load_app_module()
     report = app.build_embedded_sample_report()

@@ -98,7 +98,8 @@ To deploy the UI from public Git:
 2. Use `https://github.com/rzblues/databricks-ielts-speaking-demo` with branch `main`.
 3. Add a SQL warehouse resource named `sql-warehouse` with `CAN_USE`.
 4. Add the Unity Catalog volume `main.ielts_demo.ielts_audio` as `audio-volume` with `WRITE_VOLUME`.
-5. Deploy from the repository root. Public repositories do not require a Git credential.
+5. Add `databricks-gpt-oss-20b` as a Model Serving resource named `scoring-endpoint` with `CAN_QUERY`.
+6. Deploy from the repository root. Public repositories do not require a Git credential.
 
 The App uses its Databricks service principal through `WorkspaceClient()`; do not put a personal access token in `app.yaml` or source control.
 
@@ -146,9 +147,9 @@ For local smoke only:
 ALLOW_LOCAL_REPORT_FALLBACK=true DATABRICKS_DEMO=false streamlit run app/app.py
 ```
 
-The Databricks App has a one-step real-audio workflow. Selecting a file generates a new editable `attempt_id`; `Run speaking assessment` uploads it to the governed Volume, runs `openai-whisper` on Databricks App compute, and writes the attempt, ASR segments, features, and demo score to Delta. The candidate and question fields are report metadata and should match the uploaded response.
+The Databricks App has a one-step real-audio workflow. Selecting a file generates a new editable `attempt_id`; `Run speaking assessment` uploads it to the governed Volume, runs `openai-whisper` on Databricks App compute, scores it through the configured Databricks Model Serving endpoint, and writes the attempt, ASR segments, features, and model report to Delta. The candidate and question fields are report metadata and should match the uploaded response.
 
-When Model Serving has written the report for that `attempt_id`, the App shows the live endpoint provider. The App also displays candidate/audio metadata, the latest SQL AI insight, and the latest result for each quality check.
+The App shows the live endpoint provider in Provenance. It also displays candidate/audio metadata, the latest SQL AI insight, and the latest result for each quality check.
 
 For longer audio or batch processing, use the notebook/job path instead of the App button.
 

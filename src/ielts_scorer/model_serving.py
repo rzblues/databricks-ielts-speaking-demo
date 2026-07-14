@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -77,6 +77,7 @@ def databricks_host_and_token() -> tuple[str, str]:
 
 def invoke_chat_endpoint(endpoint_name: str, messages: list[dict[str, str]], max_tokens: int = 900) -> dict[str, Any]:
     request_body = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.0}
+    sdk_error = None
     try:
         from databricks.sdk import WorkspaceClient  # type: ignore
 
@@ -87,10 +88,14 @@ def invoke_chat_endpoint(endpoint_name: str, messages: list[dict[str, str]], max
         )
         if isinstance(response, dict):
             return response
-    except Exception:
-        pass
+    except Exception as exc:
+        sdk_error = exc
 
-    host, token = databricks_host_and_token()
+    try:
+        host, token = databricks_host_and_token()
+    except Exception as cli_error:
+        detail = sdk_error or cli_error
+        raise RuntimeError(f"Databricks Model Serving invocation failed: {detail}") from detail
     payload = json.dumps(request_body).encode("utf-8")
     request = urllib.request.Request(
         f"{host}/serving-endpoints/{endpoint_name}/invocations",
@@ -238,3 +243,47 @@ def build_model_serving_report(
         model_endpoint=endpoint_name,
         rubric_version=os.getenv("RUBRIC_VERSION", "ielts-style-demo-model-serving-v1"),
     )
+
+
+def score_with_model_serving(
+    attempt: Attempt,
+    segments: list[ASRSegment],
+    features: SpeechFeatures,
+    endpoint_name: str,
+    asr_provenance: ProviderProvenance,
+    invoker: Callable[[str, list[dict[str, str]], int], dict[str, Any]] = invoke_chat_endpoint,
+) -> ScoringReport:
+    messages = model_serving_prompt(attempt, segments, features)
+    payload = invoker(endpoint_name, messages, 2000)
+    try:
+        return build_model_serving_report(
+            attempt,
+            segments,
+            features,
+            endpoint_name,
+            payload,
+            asr_provenance,
+        )
+    except Exception as first_error:
+        repair_messages = [
+            *messages,
+            {"role": "assistant", "content": json.dumps(payload, ensure_ascii=True)[:12000]},
+            {
+                "role": "user",
+                "content": "The previous response failed schema validation. Return only one corrected JSON object matching the requested schema.",
+            },
+        ]
+        repaired_payload = invoker(endpoint_name, repair_messages, 2000)
+        try:
+            return build_model_serving_report(
+                attempt,
+                segments,
+                features,
+                endpoint_name,
+                repaired_payload,
+                asr_provenance,
+            )
+        except Exception as second_error:
+            raise RuntimeError(
+                f"Model Serving response failed validation after one repair: {second_error}"
+            ) from first_error

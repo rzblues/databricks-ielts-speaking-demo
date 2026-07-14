@@ -10,3 +10,5 @@ env:
     valueFrom: "audio-volume"
   - name: WHISPER_MODEL
     value: "/Volumes/main/ielts_demo/ielts_audio/models/tiny.en.pt"
+  - name: DATABRICKS_MODEL_ENDPOINT
+    valueFrom: "scoring-endpoint"

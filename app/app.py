@@ -24,6 +24,7 @@ from ielts_scorer.audio_preprocess import inspect_audio, preprocess_for_asr
 from ielts_scorer.audio_ingest import validate_attempt_id, volume_destination
 from ielts_scorer.audio_io import first_attempt, load_segments
 from ielts_scorer.features import extract_features
+from ielts_scorer.model_serving import score_with_model_serving
 from ielts_scorer.provider_provenance import registered_real_audio_provenance
 from ielts_scorer.scoring import build_mock_report
 from ielts_scorer.schemas import ScoringReport
@@ -378,10 +379,18 @@ def process_uploaded_audio_on_databricks_compute(
         provenance = registered_real_audio_provenance(
             asr_provider="databricks_app_local_whisper",
             asr_is_mock=False,
-            scoring_provider="rule_based_mock",
+            scoring_provider="pending",
             scoring_is_mock=True,
         )
-        report = build_mock_report(attempt, segments, features, provenance=provenance)
+        endpoint_name = os.getenv("DATABRICKS_MODEL_ENDPOINT", "databricks-gpt-oss-20b")
+        notify("Scoring with Databricks Model Serving", 82)
+        report = score_with_model_serving(
+            attempt,
+            segments,
+            features,
+            endpoint_name,
+            provenance,
+        )
     except Exception as exc:
         execute_databricks_statement(
             f"UPDATE {namespace}.processing_runs SET processing_status = 'FAILED', error_message = {sql_literal(str(exc)[:1000])} "
@@ -389,7 +398,7 @@ def process_uploaded_audio_on_databricks_compute(
         )
         raise
 
-    notify("Writing assessment records to Delta", 88)
+    notify("Writing assessment records to Delta", 92)
     execute_databricks_statement(f"DELETE FROM {namespace}.asr_segments WHERE attempt_id = {sql_literal(attempt_id)}")
     execute_databricks_statement(f"DELETE FROM {namespace}.speech_features WHERE attempt_id = {sql_literal(attempt_id)}")
     execute_databricks_statement(f"DELETE FROM {namespace}.scoring_results WHERE attempt_id = {sql_literal(attempt_id)}")
@@ -447,7 +456,8 @@ def process_uploaded_audio_on_databricks_compute(
     insert_row("scoring_results", list(record), [record[column] for column in record])
     execute_databricks_statement(
         f"UPDATE {namespace}.processing_runs SET processing_status = 'COMPLETED', asr_provider = 'databricks_app_local_whisper', "
-        f"asr_is_mock = false, scoring_provider = 'rule_based_mock', scoring_is_mock = true WHERE run_id = {sql_literal(run_id)}"
+        f"asr_is_mock = false, scoring_provider = {sql_literal(report.provenance.scoring_provider)}, "
+        f"scoring_is_mock = {sql_literal(report.provenance.scoring_is_mock)} WHERE run_id = {sql_literal(run_id)}"
     )
     notify("Assessment ready", 100)
     return report
@@ -541,6 +551,21 @@ def load_audio_playback_payload(
     if not content:
         raise ValueError("Scored audio file is empty.")
     return content, mime_type, path.name
+
+
+def processing_status_markup(message: str, percent: int, state: str = "running") -> str:
+    progress = max(0, min(100, int(percent)))
+    state_class = state if state in {"running", "complete", "error"} else "running"
+    return (
+        f'<div class="processing-status {state_class}" role="status" aria-live="polite">'
+        '<div class="processing-status-heading">'
+        '<span class="processing-status-spinner" aria-hidden="true"></span>'
+        f'<span class="processing-status-message">{escape(message)}</span>'
+        f'<span class="processing-status-percent">{progress}%</span></div>'
+        '<div class="processing-status-track">'
+        f'<span class="processing-status-fill" style="width: {progress}%"></span>'
+        "</div></div>"
+    )
 
 
 def databricks_theme_css() -> str:
@@ -650,6 +675,79 @@ def databricks_theme_css() -> str:
 
     [data-testid="stProgress"] > div > div > div > div {
         background-color: var(--db-red);
+    }
+
+    .processing-status {
+        margin: 8px 0;
+        padding: 10px 11px;
+        background: var(--db-red-soft);
+        border: 1px solid var(--db-border);
+        border-left: 3px solid var(--db-red);
+        border-radius: var(--db-radius-md);
+        color: var(--db-text) !important;
+    }
+
+    .processing-status * {
+        color: var(--db-text) !important;
+    }
+
+    .processing-status-heading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 650;
+    }
+
+    .processing-status-message {
+        flex: 1;
+        min-width: 0;
+        line-height: 1.35;
+    }
+
+    .processing-status-percent {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .processing-status-spinner {
+        width: 13px;
+        height: 13px;
+        flex: 0 0 13px;
+        border: 2px solid var(--db-border-strong);
+        border-top-color: var(--db-red);
+        border-radius: 50%;
+        animation: processing-spin 0.8s linear infinite;
+    }
+
+    .processing-status.complete .processing-status-spinner {
+        border-color: var(--db-green);
+        animation: none;
+    }
+
+    .processing-status.error .processing-status-spinner {
+        border-color: var(--db-error);
+        animation: none;
+    }
+
+    .processing-status-track {
+        height: 4px;
+        margin-top: 8px;
+        overflow: hidden;
+        background: var(--db-surface);
+        border-radius: var(--db-radius-sm);
+    }
+
+    .processing-status-fill {
+        display: block;
+        height: 100%;
+        background: var(--db-red);
+        transition: width 180ms ease;
+    }
+
+    @keyframes processing-spin {
+        to { transform: rotate(360deg); }
     }
 
     [data-testid="stTextInput"] input,
@@ -1353,12 +1451,17 @@ def main() -> None:
             disabled=uploaded is None,
             use_container_width=True,
         ):
-            process_status = st.status("Preparing real-audio assessment", expanded=True)
-            process_progress = process_status.progress(5, text="Validating upload")
+            process_status = st.empty()
+            process_status.markdown(
+                processing_status_markup("Validating upload", 5),
+                unsafe_allow_html=True,
+            )
 
             def update_processing_status(message: str, percent: int) -> None:
-                process_status.update(label=message, state="running", expanded=True)
-                process_progress.progress(percent, text=message)
+                process_status.markdown(
+                    processing_status_markup(message, percent),
+                    unsafe_allow_html=True,
+                )
 
             try:
                 processed_report = process_uploaded_audio_on_databricks_compute(
@@ -1369,11 +1472,17 @@ def main() -> None:
                     question_text,
                     progress=update_processing_status,
                 )
-                process_status.update(label="Assessment ready", state="complete", expanded=False)
+                process_status.markdown(
+                    processing_status_markup("Assessment ready", 100, state="complete"),
+                    unsafe_allow_html=True,
+                )
                 st.success(f"Processed real ASR attempt: {processed_report.attempt_id}")
                 st.rerun()
             except Exception as exc:
-                process_status.update(label="Real ASR processing failed", state="error", expanded=True)
+                process_status.markdown(
+                    processing_status_markup("Real ASR processing failed", 100, state="error"),
+                    unsafe_allow_html=True,
+                )
                 st.error(f"Real ASR processing failed: {exc}")
 
         st.markdown("<hr />", unsafe_allow_html=True)

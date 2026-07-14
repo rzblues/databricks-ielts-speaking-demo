@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from ielts_scorer.features import extract_features
-from ielts_scorer.model_serving import build_model_serving_report
+from ielts_scorer.model_serving import build_model_serving_report, score_with_model_serving
 from ielts_scorer.provider_provenance import ProviderProvenance
 from ielts_scorer.schemas import ASRSegment, Attempt
 
@@ -72,3 +72,24 @@ def test_model_report_rejects_string_evidence_instead_of_splitting_characters():
 
     with pytest.raises((ValidationError, ValueError), match="evidence"):
         build_model_serving_report(attempt, segments, features, "endpoint", payload(evidence), provenance)
+
+
+def test_score_with_model_serving_returns_real_scoring_provenance():
+    attempt, segments, features, provenance = bundle()
+    evidence = {name: ["short evidence"] for name in (
+        "fluency_and_coherence", "lexical_resource", "grammatical_range_and_accuracy", "pronunciation_intelligibility"
+    )}
+    calls = []
+
+    report = score_with_model_serving(
+        attempt,
+        segments,
+        features,
+        "endpoint",
+        provenance,
+        invoker=lambda endpoint, messages, max_tokens: calls.append((endpoint, messages, max_tokens)) or payload(evidence),
+    )
+
+    assert len(calls) == 1
+    assert report.provenance.scoring_provider == "databricks_model_serving:endpoint"
+    assert report.provenance.scoring_is_mock is False
