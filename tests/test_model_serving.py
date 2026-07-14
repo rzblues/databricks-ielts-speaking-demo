@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+from scripts.score_with_model_serving import sql_boolean
 
 from ielts_scorer.features import extract_features
 from ielts_scorer.model_serving import build_model_serving_report, score_with_model_serving
@@ -93,3 +94,8 @@ def test_score_with_model_serving_returns_real_scoring_provenance():
     assert len(calls) == 1
     assert report.provenance.scoring_provider == "databricks_model_serving:endpoint"
     assert report.provenance.scoring_is_mock is False
+
+
+@pytest.mark.parametrize(("value", "expected"), [("false", False), ("true", True), (False, False), (True, True)])
+def test_sql_boolean_parses_warehouse_values(value, expected):
+    assert sql_boolean(value) is expected

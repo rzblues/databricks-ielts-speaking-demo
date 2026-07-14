@@ -60,6 +60,17 @@ def row_dict(table: str, row: list[object]) -> dict[str, object]:
     return dict(zip(table_columns(table), row))
 
 
+def sql_boolean(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1"}:
+        return True
+    if normalized in {"false", "0"}:
+        return False
+    raise ValueError(f"unsupported SQL boolean value: {value!r}")
+
+
 def load_attempt_bundle(attempt_id: str | None) -> tuple[Attempt, list[ASRSegment], SpeechFeatures, ProviderProvenance, str]:
     where = f"WHERE attempt_id = {sql_literal(attempt_id)}" if attempt_id else ""
     attempt_row = fetch_one(f"SELECT {', '.join(table_columns('attempts'))} FROM {NAMESPACE}.attempts {where} ORDER BY created_at DESC LIMIT 1")
@@ -97,7 +108,7 @@ def load_attempt_bundle(attempt_id: str | None) -> tuple[Attempt, list[ASRSegmen
     provenance = ProviderProvenance(
         audio_source="real_audio" if pipeline_mode == "real_audio" else "mock",
         asr_provider=str(asr_provider),
-        asr_is_mock=bool(asr_is_mock),
+        asr_is_mock=sql_boolean(asr_is_mock),
         scoring_provider="pending",
         scoring_is_mock=True,
         pipeline_mode=str(pipeline_mode),

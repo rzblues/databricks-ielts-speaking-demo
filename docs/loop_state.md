@@ -87,8 +87,9 @@ status=MONITOR_STATUS_ACTIVE
 - Processing UI no longer uses Streamlit's theme-dependent status text; a custom light-red panel forces all labels and percentages to `--db-text` with a visible spinner and progress bar.
 - The App upload path now scores through `databricks-gpt-oss-20b` after real Whisper ASR. Model responses are schema-validated and repaired once; failure stops the run instead of silently substituting rule-based mock scoring.
 - App resource `scoring-endpoint` grants `CAN_QUERY` to the Model Serving endpoint alongside the existing Warehouse and Volume resources.
-- Verification: `58 passed`; live endpoint contract probe returned `databricks_model_serving:databricks-gpt-oss-20b`, `scoring_is_mock=false`, overall 6.5.
+- Verification: `62 passed`; live endpoint contract probe returned `databricks_model_serving:databricks-gpt-oss-20b`, `scoring_is_mock=false`, overall 6.5.
 - Deployment: `01f17f9081b21ab7a8d14989db31ead2`, status `SUCCEEDED`; App `RUNNING`; compute `ACTIVE`; all three resources present after update.
+- Historical repair: latest uploaded attempt `attempt_ielts_demo_test_20260714_141928_97bb03` was re-scored through Model Serving; its newest Delta report is real scoring with overall 5.5. Warehouse string booleans are now parsed explicitly so `"false"` is not treated as truthy.
 
 ## Pending Loop
 
