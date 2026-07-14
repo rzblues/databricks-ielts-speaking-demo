@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import wave
@@ -76,19 +77,41 @@ def inspect_audio(path: Path) -> AudioInspection:
     )
 
 
+def ensure_ffmpeg_on_path() -> str:
+    existing = shutil.which("ffmpeg")
+    if existing:
+        return existing
+    try:
+        from imageio_ffmpeg import get_ffmpeg_exe  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("ffmpeg is required to normalize audio to mono 16k WAV") from exc
+
+    bundled = Path(get_ffmpeg_exe())
+    if not bundled.is_file():
+        raise RuntimeError("bundled ffmpeg executable is unavailable")
+    bin_dir = Path("/tmp/ielts_scorer_bin")
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    executable = bin_dir / "ffmpeg"
+    if not executable.exists():
+        executable.symlink_to(bundled)
+    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+    return str(executable)
+
+
 def preprocess_for_asr(path: Path, output_dir: Path) -> Path:
     """Return a mono 16k WAV copy for ASR, preserving the original audio."""
-    inspection = inspect_audio(path)
+    if not path.exists():
+        raise FileNotFoundError(f"audio file does not exist: {path}")
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / f"{path.stem}.mono16k.wav"
-    if inspection.format == "wav" and inspection.channels == 1 and inspection.sample_rate_hz == 16000:
+    inspection = inspect_wav(path) if path.suffix.lower() == ".wav" else None
+    if inspection and inspection.channels == 1 and inspection.sample_rate_hz == 16000:
         if path.resolve() != target.resolve():
             target.write_bytes(path.read_bytes())
         return target
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError("ffmpeg is required to normalize audio to mono 16k WAV")
+    ffmpeg = ensure_ffmpeg_on_path()
     completed = subprocess.run(
-        ["ffmpeg", "-y", "-i", str(path), "-ac", "1", "-ar", "16000", str(target)],
+        [ffmpeg, "-y", "-i", str(path), "-ac", "1", "-ar", "16000", str(target)],
         check=False,
         capture_output=True,
         text=True,

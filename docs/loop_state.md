@@ -73,6 +73,15 @@ status=MONITOR_STATUS_ACTIVE
 - Deployment: `01f17f8cb25618e28cb872dce3e03fce`, status `SUCCEEDED`; App `RUNNING`; compute `ACTIVE`.
 - Privacy cleanup: removed stale `sample_data/audio/real_demo.wav` from the Workspace deployment source; only the synthetic sample remains.
 
+## 2026-07-14 Non-WAV ASR And UI Repair
+
+- Reproduced from Delta: `attempt_real_app_001` failed because the App image had no system `ffprobe` for the uploaded non-WAV file.
+- Fixed: `imageio-ffmpeg` supplies a bundled executable; preprocessing converts MP3/M4A/FLAC directly to mono 16 kHz WAV without a separate `ffprobe` dependency and exposes ffmpeg to Whisper through PATH.
+- Workflow: selecting a file creates a new editable attempt ID; the separate Register action was removed, and `Run speaking assessment` now performs registration plus ASR as one transaction from the user's perspective.
+- UI: uploaded-file, status, alert, caption, and dropzone text use explicit readable colors; the only white text found by computed-style inspection is the primary-button label on its red background.
+- Verification: `56 passed`; bundled-ffmpeg probe passed with an empty system PATH; real M4A-to-WAV conversion passed; browser upload confirmed the generated attempt ID and single enabled action.
+- Deployment: `01f17f8ebb0f1d349bfd66ea373d9a9b`, status `SUCCEEDED`; App `RUNNING`; compute `ACTIVE`; build log confirms `imageio-ffmpeg-0.6.0` installed.
+
 ## Pending Loop
 
 No remaining M0-M6 task is pending.

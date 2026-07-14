@@ -56,4 +56,4 @@ To make this production-grade:
 
 ## Real-Audio Upgrade
 
-The App includes a real-audio upload panel. Uploading a file stores bytes under the `main.ielts_demo.ielts_audio` Volume and records the attempt plus a `processing_runs` row. `Process With Databricks Whisper ASR` runs Whisper on App compute and labels its rule-based score as mock; the Serverless Job path runs the full chain through live Model Serving.
+The App includes a one-step real-audio panel. Selecting a file generates a new editable attempt ID. `Run speaking assessment` stores the audio under the `main.ielts_demo.ielts_audio` Volume, records the attempt and processing run, runs Whisper on App compute, and labels its rule-based score as mock; the Serverless Job path runs the full chain through live Model Serving.

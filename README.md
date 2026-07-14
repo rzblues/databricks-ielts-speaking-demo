@@ -146,7 +146,7 @@ For local smoke only:
 ALLOW_LOCAL_REPORT_FALLBACK=true DATABRICKS_DEMO=false streamlit run app/app.py
 ```
 
-The Databricks App also has a real-audio upload/register panel. The `Process With Databricks Whisper ASR` button installs and runs `openai-whisper` on Databricks App compute, writes real ASR segments to Delta, and labels scoring as mock until Model Serving scoring is run for that attempt.
+The Databricks App has a one-step real-audio workflow. Selecting a file generates a new editable `attempt_id`; `Run speaking assessment` uploads it to the governed Volume, runs `openai-whisper` on Databricks App compute, and writes the attempt, ASR segments, features, and demo score to Delta. The candidate and question fields are report metadata and should match the uploaded response.
 
 When Model Serving has written the report for that `attempt_id`, the App shows the live endpoint provider. The App also displays candidate/audio metadata, the latest SQL AI insight, and the latest result for each quality check.
 

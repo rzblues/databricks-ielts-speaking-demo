@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -247,6 +248,17 @@ def sql_literal(value) -> str:
     if isinstance(value, datetime):
         return f"TIMESTAMP '{value.strftime('%Y-%m-%d %H:%M:%S')}'"
     return "'" + str(value).replace("\\", "\\\\").replace("'", "''") + "'"
+
+
+def create_upload_attempt_id(
+    filename: str,
+    timestamp: str | None = None,
+    nonce: str | None = None,
+) -> str:
+    stem = re.sub(r"[^a-z0-9]+", "_", Path(filename).stem.lower()).strip("_") or "audio"
+    created = timestamp or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    unique = nonce or uuid4().hex[:6]
+    return validate_attempt_id(f"attempt_{stem[:32]}_{created}_{unique}")
 
 
 def register_uploaded_audio(
@@ -609,6 +621,13 @@ def databricks_theme_css() -> str:
         color: var(--db-muted) !important;
     }
 
+    [data-testid="stFileUploaderFile"] p,
+    [data-testid="stFileUploaderFile"] span,
+    [data-testid="stFileUploaderFile"] small,
+    [data-testid="stFileUploader"] [data-testid="stCaptionContainer"] {
+        color: var(--db-text) !important;
+    }
+
     [data-stale="true"] {
         opacity: 1 !important;
     }
@@ -619,6 +638,14 @@ def databricks_theme_css() -> str:
         border-left: 3px solid var(--db-red);
         border-radius: var(--db-radius-md);
         color: var(--db-text);
+    }
+
+    [data-testid="stStatusWidget"] p,
+    [data-testid="stStatusWidget"] span,
+    [data-testid="stAlert"] p,
+    [data-testid="stAlert"] span,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+        color: var(--db-text) !important;
     }
 
     [data-testid="stProgress"] > div > div > div > div {
@@ -1301,28 +1328,27 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
+        if "attempt_id_input" not in st.session_state:
+            st.session_state["attempt_id_input"] = os.getenv("ATTEMPT_ID", "attempt_real_app_001")
+
+        def refresh_attempt_id() -> None:
+            selected = st.session_state.get("speaking_audio_upload")
+            if selected is not None:
+                st.session_state["attempt_id_input"] = create_upload_attempt_id(selected.name)
+
         uploaded = st.file_uploader(
             "Speaking audio",
             type=["wav", "mp3", "m4a", "flac"],
             help="Accepted formats: WAV, MP3, M4A, and FLAC.",
+            key="speaking_audio_upload",
+            on_change=refresh_attempt_id,
         )
-        attempt_id = st.text_input("Attempt ID", value=os.getenv("ATTEMPT_ID", "attempt_real_app_001"))
-        candidate_id = st.text_input("Candidate ID", value="demo_candidate_app")
+        attempt_id = st.text_input("Attempt ID", key="attempt_id_input")
+        candidate_id = st.text_input("Candidate ID", value="demo_candidate_001")
         question_id = st.text_input("Question ID", value="part2_problem")
         question_text = st.text_area("Question", value="Describe a time you solved a difficult problem.")
-        if st.button("Register audio", disabled=uploaded is None, use_container_width=True):
-            registration_status = st.status("Registering audio", expanded=True)
-            try:
-                registration_status.write("Uploading audio to the governed Databricks Volume")
-                registered_path = register_uploaded_audio(uploaded, attempt_id, candidate_id, question_id, question_text)
-                registration_status.update(label="Audio registered", state="complete", expanded=False)
-                st.success(f"Registered: {registered_path}")
-                st.info("Audio registered. Continue with Whisper ASR, or use the notebook/job path for longer files.")
-            except Exception as exc:
-                registration_status.update(label="Audio registration failed", state="error", expanded=True)
-                st.error(f"Upload/register failed: {exc}")
         if st.button(
-            "Process with Whisper ASR",
+            "Run speaking assessment",
             type="primary",
             disabled=uploaded is None,
             use_container_width=True,

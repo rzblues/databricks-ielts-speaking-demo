@@ -57,6 +57,21 @@ def test_upload_instructions_and_loading_state_remain_visible_on_white():
     assert "color: var(--db-muted) !important;" in css
     assert '[data-stale="true"]' in css
     assert '[data-testid="ststatuswidget"]' in css
+    assert '[data-testid="stfileuploaderfile"]' in css
+    assert '[data-testid="stalert"]' in css
+
+
+def test_uploaded_audio_gets_a_new_safe_attempt_id():
+    app = load_app_module()
+
+    attempt_id = app.create_upload_attempt_id(
+        "My Speaking Answer.m4a",
+        timestamp="20260714_221530",
+        nonce="a1b2c3",
+    )
+
+    assert attempt_id == "attempt_my_speaking_answer_20260714_221530_a1b2c3"
+    assert app.validate_attempt_id(attempt_id) == attempt_id
 
 
 def test_score_and_evidence_markup_match_the_2a_information_hierarchy():
